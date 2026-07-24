@@ -1,6 +1,7 @@
 /* 筋トレ記録 PWA - Service Worker
-   アプリ本体をキャッシュしてオフラインでも起動できるようにする。 */
-const CACHE = 'kintore-v1';
+   HTML(ページ本体)は network-first で最新を取得し、更新を即反映。
+   アイコンなどのアセットは cache-first でオフライン起動を担保。 */
+const CACHE = 'kintore-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -22,13 +23,29 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  // 同一オリジンのGETのみキャッシュ対象。同期(script.google.com)などはそのまま通す。
+  // 同一オリジンのGETのみ対象。同期(script.google.com)などはそのまま通す。
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+
+  const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    // network-first: 最新のHTMLを取りにいき、オフライン時はキャッシュにフォールバック
+    e.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // cache-first: アセットはキャッシュ優先、無ければ取得してキャッシュ
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
       return res;
-    }).catch(() => caches.match('./index.html')))
+    }).catch(() => undefined))
   );
 });
