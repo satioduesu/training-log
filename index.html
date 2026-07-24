@@ -807,7 +807,7 @@ function resetAll(){ if(!confirm('すべての記録と種目を消去します�
 function pushToCloud(manual){
   const url=S.settings.syncUrl; if(!url){ if(manual)toast('同期URLが未設定です'); return; }
   const payload={token:S.settings.token, exercises:S.exercises, sets:S.sets, savedAt:Date.now()};
-  fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})
+  fetch(url,{method:'POST',mode:'no-cors',credentials:'include',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})
     .then(()=>{ S.meta.lastPush=Date.now(); save({nosync:true}); if(manual)toast('スプレッドシートへ送信しました'); if(manual)render(); })
     .catch(()=>{ if(manual)toast('送信に失敗しました'); });
 }
