@@ -1,7 +1,7 @@
 /* 筋トレ記録 PWA - Service Worker
    HTML(ページ本体)は network-first で最新を取得し、更新を即反映。
    アイコンなどのアセットは cache-first でオフライン起動を担保。 */
-const CACHE = 'kintore-v3';
+const CACHE = 'kintore-v4';
 const ASSETS = [
   './',
   './index.html',
