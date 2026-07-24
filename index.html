@@ -195,6 +195,11 @@ const DEFAULT_EXERCISES = [
 
 /* ---------- ストレージ ---------- */
 const LS_KEY = 'kintore_v1';
+/* ---- Google フォーム 自動バックアップ（既定・端末問わず有効） ---- */
+const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScFfLR1Ben7vn-VWd180v87N761za1j6niFXxTRQrMRT3ZlLA/formResponse';
+const FORM_ENTRY = 'entry.106132556';
+function backupUrl(){ return (S.settings.formUrl||FORM_URL); }
+function backupEntry(){ return (S.settings.formEntry||FORM_ENTRY); }
 let S = loadState();
 
 function loadState(){
@@ -212,9 +217,9 @@ function loadState(){
 let saveTimer=null;
 function save(opts){
   localStorage.setItem(LS_KEY, JSON.stringify(S));
-  if(!(opts&&opts.nosync) && S.settings.syncUrl){
+  if(!(opts&&opts.nosync) && backupUrl()){
     clearTimeout(saveTimer);
-    saveTimer=setTimeout(pushToCloud, 1500); // デバウンス同期
+    saveTimer=setTimeout(function(){ backupToForm(false); }, 2500); // デバウンス自動バックアップ
   }
 }
 function uid(p){ return (p||'id')+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -738,20 +743,15 @@ function viewSet(){
   const s=S.settings;
   const lastPush=S.meta.lastPush?new Date(S.meta.lastPush).toLocaleString('ja-JP'):'—';
   return `
-    <div class="card"><b>Google スプレッドシート同期</b>
-      <div class="hint" style="margin:4px 0 10px">記録をスプレッドシートへ自動バックアップします。設定手順は同梱の「セットアップ.md」を参照。空欄なら端末内だけに保存されます。</div>
-      <label>同期URL (Apps ScriptのウェブアプリURL)</label>
-      <input id="syncUrl" value="${s.syncUrl||''}" placeholder="https://script.google.com/macros/s/…/exec">
-      <div style="height:10px"></div>
-      <label>合言葉トークン (スクリプトに設定した文字列)</label>
-      <input id="syncToken" value="${s.token||''}" placeholder="任意の秘密の文字列">
-      <div style="height:12px"></div>
-      <button class="btn" onclick="saveSync()">保存</button>
-      <div class="grid2" style="margin-top:8px">
-        <button class="btn sec" onclick="pushToCloud(true)">今すぐ送信</button>
-        <button class="btn sec" onclick="pullFromCloud()">クラウドから復元</button>
+    <div class="card"><b>クラウド自動バックアップ</b>
+      <div class="hint" style="margin:4px 0 10px">記録するたびに Google スプレッドシートへ自動保存されます（設定不要）。端末が変わっても、最新データの貼り付けで復元できます。</div>
+      <div class="grid2">
+        <button class="btn sec" onclick="backupToForm(true)">今すぐバックアップ</button>
+        <button class="btn sec" onclick="openRestore()">復元（貼り付け）</button>
       </div>
-      <div class="hint" style="margin-top:8px">最終送信: ${lastPush}</div>
+      <div style="height:8px"></div>
+      <a class="btn ghost" style="text-align:center;display:block;text-decoration:none" href="https://docs.google.com/spreadsheets/d/18bqLnGGUfTqLXo0FVLaLk56Lwklb8xpTWQ0AI6tm1gM/edit" target="_blank" rel="noopener">バックアップ先のシートを開く</a>
+      <div class="hint" style="margin-top:8px">最終バックアップ: ${lastPush}</div>
     </div>
     <div class="card"><b>バックアップ (ファイル)</b>
       <div class="hint" style="margin:4px 0 10px">同期を使わない場合でも、時々これで書き出して保管しておくと安心です。</div>
@@ -800,31 +800,37 @@ function resetAll(){ if(!confirm('すべての記録と種目を消去します�
   localStorage.removeItem(LS_KEY); S=loadState(); render(); toast('消去しました'); }
 
 /* ============================================================
-   クラウド同期 (Google Apps Script)
-   push: POST(no-cors, text/plain) 書き込み専用
-   pull: JSONP  で読み取り
+   クラウド・バックアップ (Google フォーム → スプレッドシート)
+   保存のたびに全データ(JSON)をフォームへ no-cors POST で追記。
+   匿名POSTなのでiPhone Safari でも動作。復元は貼り付けで行う。
    ============================================================ */
-function pushToCloud(manual){
-  const url=S.settings.syncUrl; if(!url){ if(manual)toast('同期URLが未設定です'); return; }
-  const payload={token:S.settings.token, exercises:S.exercises, sets:S.sets, savedAt:Date.now()};
-  fetch(url,{method:'POST',mode:'no-cors',credentials:'include',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})
-    .then(()=>{ S.meta.lastPush=Date.now(); save({nosync:true}); if(manual)toast('スプレッドシートへ送信しました'); if(manual)render(); })
-    .catch(()=>{ if(manual)toast('送信に失敗しました'); });
+function backupToForm(manual){
+  const url=backupUrl(), entry=backupEntry();
+  if(!url||!entry){ if(manual)toast('バックアップ先が未設定です'); return; }
+  const snapshot=JSON.stringify({app:'kintore', savedAt:Date.now(),
+    exercises:S.exercises, sets:S.sets});
+  const body=new URLSearchParams(); body.append(entry, snapshot);
+  fetch(url,{method:'POST',mode:'no-cors',body:body})
+    .then(()=>{ S.meta.lastPush=Date.now(); save({nosync:true}); if(manual){toast('バックアップしました'); render();} })
+    .catch(()=>{ if(manual)toast('バックアップに失敗しました'); });
 }
-let jsonpCb=0;
-function pullFromCloud(){
-  const url=S.settings.syncUrl; if(!url){ toast('同期URLが未設定です'); return; }
-  if(!confirm('クラウドの内容で、この端末のデータを置き換えます。よろしいですか？')) return;
-  const cb='__ktjsonp'+(++jsonpCb); const sep=url.includes('?')?'&':'?';
-  const tmr=setTimeout(()=>{ cleanup(); toast('取得に失敗しました'); }, 12000);
-  function cleanup(){ delete window[cb]; const sc=document.getElementById(cb); if(sc)sc.remove(); }
-  window[cb]=function(data){ clearTimeout(tmr); cleanup();
-    if(!data || data.error){ toast('取得に失敗: '+((data&&data.error)||'')); return; }
-    S.exercises=data.exercises&&data.exercises.length?data.exercises:S.exercises;
-    S.sets=data.sets||[]; S.meta.lastPull=Date.now(); save({nosync:true}); render(); toast('クラウドから復元しました'); };
-  const sc=document.createElement('script'); sc.id=cb; sc.onerror=()=>{clearTimeout(tmr);cleanup();toast('取得に失敗しました');};
-  sc.src=url+sep+'callback='+cb+'&token='+encodeURIComponent(S.settings.token)+'&_='+Date.now();
-  document.body.appendChild(sc);
+function restoreFromText(){
+  const el=document.getElementById('restoreText'); const raw=el?el.value.trim():'';
+  if(!raw){ toast('復元データを貼り付けてください'); return; }
+  let d=null; try{ d=JSON.parse(raw); }catch(e){ toast('データの形式が不正です'); return; }
+  if(!d || (!d.sets && !d.exercises)){ toast('データが読み取れません'); return; }
+  if(!confirm('この端末のデータを、貼り付けた内容で置き換えます。よろしいですか？')) return;
+  S.exercises = (d.exercises&&d.exercises.length)? d.exercises : S.exercises;
+  S.sets = d.sets||[]; S.meta.lastPull=Date.now();
+  save({nosync:true}); closeSheet(); render(); toast('復元しました');
+}
+function openRestore(){
+  openSheet('バックアップから復元', `
+    <div class="hint" style="margin:2px 2px 10px">スプレッドシートの最新行の <b>data</b> 列の中身（{"app":"kintore"…}）をコピーして、下に貼り付けてください。</div>
+    <textarea id="restoreText" placeholder='ここに貼り付け' style="width:100%;min-height:140px;font-size:13px"></textarea>
+    <button class="btn" style="margin-top:12px" onclick="restoreFromText()">この内容で復元する</button>
+    <button class="btn sec" style="margin-top:8px" onclick="closeSheet()">キャンセル</button>
+  `);
 }
 
 /* ============================================================
