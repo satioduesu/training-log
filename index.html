@@ -37,7 +37,10 @@
   html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);color-scheme:dark;
     font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
   body{padding-top:var(--safe-t);}
-  #app{max-width:560px;margin:0 auto;padding:0 16px 110px;}
+  #app{max-width:560px;margin:0 auto;padding:0 16px 110px;
+    min-height:calc(100vh - var(--safe-t));min-height:calc(100dvh - var(--safe-t));
+    display:flex;flex-direction:column;}
+  #view{margin:auto 0;}   /* 中身が短い時は上下中央寄せ、長い時はスクロール(クリップしない) */
   h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.021em;}
   b,strong{font-variant-numeric:tabular-nums;}
   /* Large title header (iOS) */
